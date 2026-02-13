@@ -11,7 +11,7 @@ import requests
 
 # Model configuration
 USE_ANTHROPIC = False  # Set to False to use Ollama
-ANTHROPIC_API_KEY = "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"  # Replace with your actual key
+ANTHROPIC_API_KEY = "YOUR_KEY_HERE"  # Replace with your actual key
 ANTHROPIC_MODEL = "claude-sonnet-4-20250514"  # or claude-opus-4-20250514
 
 # Ollama config (fallback)
