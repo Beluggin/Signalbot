@@ -1,0 +1,121 @@
+SignalBot v5gi+ State-Vector Cognitive Architecture
+═══════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────┐
+│                    USER INPUT                            │
+│  "My name is Adam, and I'm frustrated with this bug"    │
+└────────────────┬────────────────────────────────────────┘
+                 │
+                 ▼
+┌────────────────────────────────────────────────────────┐
+│           INDELIBLE FACTS ENGINE                        │
+│  • Detects: "My name is Adam"                          │
+│  • Registers as indelible fact                         │
+│  • Locks with importance=5.0, decay=0.0                │
+└────────────────┬───────────────────────────────────────┘
+                 │
+                 ▼
+┌────────────────────────────────────────────────────────┐
+│         COGNITIVE STATE ENGINE                          │
+│  • Detects: "frustrated" → frustration += 0.25         │
+│  • Updates all 11 state vectors                        │
+│  • Saves to cognitive_state.json                       │
+└────────────────┬───────────────────────────────────────┘
+                 │
+                 ├──────────────┬──────────────┬──────────────┐
+                 ▼              ▼              ▼              ▼
+       ┌─────────────┐  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+       │  MEMORY     │  │   TONE      │ │   GOALS     │ │ INITIATIVE  │
+       │  TWDC       │  │ GENERATION  │ │   ENGINE    │ │  SCHEDULER  │
+       │             │  │             │ │             │ │             │
+       │ Re-score    │  │ "Be direct  │ │ Adjust      │ │ Check       │
+       │ memories    │  │ and         │ │ curiosity   │ │ threshold   │
+       │ based on    │  │ practical"  │ │ weighting   │ │ (signal)    │
+       │ state       │  │             │ │             │ │             │
+       └──────┬──────┘  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
+              │                │               │               │
+              └────────────────┴───────────────┴───────────────┘
+                               │
+                               ▼
+              ┌────────────────────────────────────┐
+              │     PROMPT CONSTRUCTION             │
+              │                                     │
+              │  [INDELIBLE FACTS]                 │
+              │  - User's name is Adam             │
+              │                                     │
+              │  [SYSTEM INSTRUCTIONS]             │
+              │  TONE: Be direct and practical     │
+              │                                     │
+              │  [STATE-WEIGHTED MEMORIES]         │
+              │  - [0.85] Bug fix documentation    │
+              │  - [0.72] Previous debug session   │
+              │  - [0.45] Philosophy discussion    │
+              │          (penalized by frustration) │
+              └────────────────┬───────────────────┘
+                               │
+                               ▼
+              ┌────────────────────────────────────┐
+              │      OLLAMA GENERATION              │
+              │  "Here's the fix: [steps]..."      │
+              └────────────────┬───────────────────┘
+                               │
+                               ▼
+              ┌────────────────────────────────────┐
+              │   TEMPORAL INTEGRITY UPDATE         │
+              │  • Update threads                   │
+              │  • Update goals                     │
+              │  • Check if should initiate         │
+              └────────────────┬───────────────────┘
+                               │
+                               ▼
+                    ┌──────────────────┐
+                    │  MAYBE INITIATE?  │
+                    │  frustration=0.45 │
+                    │  → NO (too high)  │
+                    └───────────────────┘
+
+
+KEY INNOVATIONS:
+════════════════
+
+1. UNIFIED STATE
+   All systems read from ONE cognitive_state instead of scattered state
+
+2. INDELIBLE FACTS
+   Identity learned through language detection, not hardcoded
+
+3. STATE-AWARE MEMORY
+   TWDC scores modulated by current cognitive state
+
+4. DYNAMIC PERSONALITY
+   Tone generated from state, not hardcoded
+
+5. SMART INITIATIVE
+   Only speaks when curiosity+engagement-frustration > threshold
+
+
+STATE VECTOR EFFECTS:
+══════════════════════
+
+frustration: 0.2 → 0.8
+├→ Memory: Penalize abstract, boost practical
+├→ Tone: "direct and solution-focused"
+└→ Initiative: Disabled (too high)
+
+curiosity: 0.5 → 0.9
+├→ Memory: Boost rabbit holes, open loops
+├→ Tone: "exploratory and inquisitive"
+└→ Initiative: Enabled (signal strong)
+
+cognitive_load: 0.3 → 0.9
+├→ Memory: Filter complex memories
+├→ Response: Cap at 120 tokens, use structure
+└→ Tone: "simple and structured"
+
+identity_adherence: 0.6 → 0.9
+├→ Memory: 2.5x boost for identity facts
+└→ Indelible facts always at top
+
+engagement: 0.9 → 0.3
+├→ Tone: Less warm, more brief
+└→ Initiative: Disabled (user disengaging)
