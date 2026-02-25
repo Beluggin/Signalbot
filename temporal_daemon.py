@@ -921,10 +921,11 @@ class TemporalDaemon:
         # v5: Mode decay — let inactive modes fade each cycle
         if MODES_AVAILABLE:
             try:
+                get_plan_buffer().daemon_check()
                 get_mode_engine().decay_all_modes()
             except Exception:
                 pass
-        get_plan_buffer().daemon_check()
+        
         # v5: Periodic archival — every 500 cycles (~50 seconds),
         # check if old memories need compressing to archive
         if MODES_AVAILABLE and self._cycle_count > 0 and self._cycle_count % 500 == 0:
