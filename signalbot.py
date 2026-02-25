@@ -1,7 +1,7 @@
 # signalbot.py
 """
 ═══════════════════════════════════════════════════════════════════
-SIGNALBOT v6.2 — Temporal Daemon with Goal Lifecycle
+SIGNALBOT v6.3 — Cognitive Mode Registry + Remember Mode
 ═══════════════════════════════════════════════════════════════════
 
 FIX LOG:
@@ -9,13 +9,18 @@ FIX LOG:
   v6.1: Boot seeding + prompt framing (daemon thinks, LLM knows)
   v6.2: Goal lifecycle — conversation topics feed into daemon,
         resolved topics retire, boot goals expire.
-        Daemon now thinks about what you ACTUALLY talked about.
+  v6.3: Cognitive Mode Registry — modes as immune response to
+        cognitive insufficiency. Remember Mode for deep archive
+        retrieval. Gap detection for future mode discovery.
+        Memory archival compresses old turns into episodes.
 
 COMMANDS:
-  state     — cognitive state vectors
+  state     — cognitive state vectors + active modes
   facts     — learned indelible facts
   daemon    — daemon status + what it's been thinking
   curiosity — curiosity signal breakdown
+  modes     — cognitive mode status + recent gaps
+  archive   — archive stats + force archive
   dream on/off — toggle dream mode
   exit/quit — shutdown
 """
@@ -40,12 +45,16 @@ from memory_engine import save_interaction, load_recent_memory
 from cognitive_state import get_cognitive_state, get_tone_instructions
 from indelible_facts import register_fact, get_indelible_prompt_section
 from memory_twdc_stateful import load_long_memory_block_stateful, get_stateful_twdc
-
+from plan_buffer import get_plan_buffer
 from temporal_daemon import get_daemon
 from goal_engine_DAEMON import GoalEngine as DaemonGoalEngine
 from curiosity_engine import get_curiosity_signal, get_curiosity_report
 
+from cognitive_modes import get_mode_engine
+from memory_archive import archive_old_memories, get_archive_stats, force_archive_all
+
 from temporal_integrity_UPDATED import get_temporal_integrity
+from speech_interface_v2 import get_speech_interface, speak, listen_push_to_talk
 
 try:
     from intent_codelet.intent_codelet import classify_intent
@@ -105,17 +114,29 @@ def main():
 
     daemon_goals = DaemonGoalEngine()
     daemon = get_daemon(goal_engine=daemon_goals)
+    mode_engine = get_mode_engine()
+    buf = get_plan_buffer()
 
     print("[INIT] State-aware memory engine initialized")
     print("[INIT] Daemon goal engine initialized")
+    print(f"[INIT] Cognitive mode engine initialized ({len(mode_engine._modes)} modes)")
+
+    # Run archival on startup (compress old memories)
+    archived = archive_old_memories()
+    if archived > 0:
+        mode_engine.refresh_archive_tags()
+        print(f"[INIT] Archived {archived} episodes from old memory")
+    speech = get_speech_interface()
+    print("[INIT] Speech interface initialized")
 
     # Model selection
     print("\nSelect model:")
-    print("1. Gemma2:2b (local, free, 60-80s response)")
-    print("2. Claude Sonnet 4 (API, ~$0.02/msg, 9s response)")
+    print("1. Gemma2:2b (local, free, 60-180s response)")
+    print("2. Claude Sonnet 4 (API, ~$0.02/msg, 10s response)")
     print("3. Phi3 (local, free, UNSTABLE)")
-    print("4. Mistral (the original)")
-
+    print("4. Mistral 7b (local, free, 120-220s response, Signalbot's 2nd choice')")
+    print("5. Llama 3.1 (Model too big, times out)")
+    print("6. Mistral Medium (API, experimental)")
     while True:
         choice = input("Enter 1-4: ").strip()
         if choice == "1":
@@ -142,23 +163,45 @@ def main():
             response_engine.OLLAMA_MODEL = "mistral"
             print("✓ Using Mistral\n")
             break
+        elif choice == "5":
+            import response_engine
+            response_engine.USE_ANTHROPIC = False
+            response_engine.OLLAMA_MODEL = "llama3.1:latest"
+            print (" Using Llama 3.1")
+            break
+        elif choice == "6":
+            import response_engine
+            response_engine.USE_ANTHROPIC = False
+            response_engine.USE_MISTRAL = True
+            print ("Using Mistral Medium")
+            break
         else:
             print("Invalid choice, try again.")
 
     # ═══ START DAEMON ═══
     daemon.start()
 
-    print("🟢 SignalBot v6.2 Online (Temporal Daemon + Goal Lifecycle)")
-    print("Commands: 'state', 'facts', 'daemon', 'curiosity', 'dream on/off', 'exit'\n")
+    print("🟢 SignalBot v6.3 Online (Cognitive Modes + Remember Mode)")
+    print("Commands: 'state', 'facts', 'daemon', 'curiosity', 'modes', 'archive', 'plans', 'dream on/off', 'speech on/off', 'exit'\n")
 
     # ═══ MAIN LOOP ═══
     dream_mode = True
+    speech_mode = False    
     turn = 0
     last_bot_output = ""
 
     try:
         while True:
-            user_input = input("You: ").strip()
+            if speech_mode:
+                print("You: ", end="", flush=True)
+                user_input = listen(timeout=10.0)  # 10 second timeout
+                if user_input is None:
+                    print("(no speech detected, type instead)")
+                    user_input = input().strip()
+                else:
+                    print(user_input)  # Show what was recognized
+            else:
+                user_input = input("You: ").strip()
             if user_input.lower() in {"exit", "quit"}:
                 break
 
@@ -171,6 +214,27 @@ def main():
                 dream_mode = False
                 print("[MODE] Dream mode OFF\n")
                 continue
+            if user_input.lower() == "speech on":
+                if speech.enable():
+                    speech_mode = True
+                    speak("Speech mode enabled. I can hear and speak now.")
+                else:
+                    print("[ERROR] Speech system not available\n")
+                continue
+
+            if user_input.lower() == "speech off":
+                speech.disable()
+                speech_mode = False
+                print("[MODE] Speech mode OFF\n")
+                continue
+
+            if user_input.lower() == "speech status":
+                print(f"\n{speech.get_status()}\n")
+                continue
+            
+            if user_input.lower() == "plans":
+                print(f"get_plan_buffer().get_full_report()")
+                continue
 
             if user_input.lower() == "state":
                 s = cog_state.state
@@ -182,7 +246,8 @@ def main():
                 print(f"  Identity:     {s.identity_adherence:.2f}")
                 print(f"  Cog Load:     {s.cognitive_load:.2f}")
                 print(f"  Tone: P={s.tone_playful:.2f} F={s.tone_formal:.2f} "
-                      f"C={s.tone_concise:.2f} W={s.tone_warm:.2f}\n")
+                      f"C={s.tone_concise:.2f} W={s.tone_warm:.2f}")
+                print(f"  {mode_engine.get_status()}\n")
                 continue
 
             if user_input.lower() == "facts":
@@ -214,6 +279,48 @@ def main():
                 print(f"\n{get_curiosity_report()}\n")
                 continue
 
+            if user_input.lower() == "modes":
+                print(f"\n{mode_engine.get_status()}")
+                active = mode_engine.get_active_modes()
+                for m in active:
+                    if m.mode_id == 0:
+                        continue
+                    print(f"  {m.name}: blend={m.blend_weight:.2f} "
+                          f"activations={m.activation_count}")
+                gaps = mode_engine.get_recent_gaps(3)
+                if gaps:
+                    print("  Recent gaps:")
+                    for g in gaps:
+                        print(f"    {g['description']} — \"{g['user_input'][:40]}\"")
+                print()
+                continue
+
+            if user_input.lower() == "archive":
+                stats = get_archive_stats()
+                print(f"\n[ARCHIVE]")
+                print(f"  Episodes: {stats['episodes']}")
+                print(f"  Total turns archived: {stats['total_turns']}")
+                print(f"  Unique tags: {stats.get('unique_tags', 0)}")
+                if stats['episodes'] > 0:
+                    print(f"  Oldest: {stats['oldest']}")
+                    print(f"  Newest: {stats['newest']}")
+                print()
+                continue
+
+            if user_input.lower() == "archive now":
+                n = archive_old_memories()
+                if n > 0:
+                    mode_engine.refresh_archive_tags()
+                print(f"\n[ARCHIVE] Created {n} new episodes\n")
+                continue
+
+            if user_input.lower() == "archive all":
+                n = force_archive_all()
+                if n > 0:
+                    mode_engine.refresh_archive_tags()
+                print(f"\n[ARCHIVE] Force-archived into {n} episodes\n")
+                continue
+
             # ═══ TURN PROCESSING ═══
             turn += 1
 
@@ -232,6 +339,21 @@ def main():
                 recent_memory = load_recent_memory()
                 long_memory = load_long_memory_block_stateful(max_bullets=10)
 
+                # ─── 4b. MODE RESONANCE CHECK (NEW in v6.3) ───
+                # Detect if active memory is sufficient or if we need deeper retrieval
+                active_memory_hit = any(
+                    w in recent_memory.lower()
+                    for w in user_input.lower().split()
+                    if len(w) > 4
+                )
+                mode_result = mode_engine.process_turn(
+                    user_input, last_bot_output,
+                    active_memory_hit=active_memory_hit,
+                    cog_state_frustration=cog_state.state.frustration,
+                )
+                archive_context = mode_result.get("archive_context", "")
+                mode_prompt = mode_engine.format_for_prompt()
+
                 # ─── 5. CURIOSITY SIGNAL ───
                 curiosity = get_curiosity_signal(user_input, last_bot_output)
 
@@ -249,6 +371,7 @@ def main():
                     "### CORE DATA (TRUST THIS OVER ALL ELSE) ###",
                     long_memory,
                     vitals_report,
+                    buf.format_for_prompt()
                 ]
 
                 # Daemon cognition injection
@@ -265,6 +388,16 @@ def main():
                         "this time pass. You had these thoughts.\n"
                     )
                     prompt_sections.append(daemon_cognition)
+
+                # Mode awareness injection (NEW in v6.3)
+                if mode_prompt:
+                    prompt_sections.append("")
+                    prompt_sections.append(mode_prompt)
+
+                # Deep memory injection (NEW in v6.3)
+                if archive_context:
+                    prompt_sections.append("")
+                    prompt_sections.append(archive_context)
 
                 if curiosity.is_actionable:
                     prompt_sections.append(
@@ -317,16 +450,30 @@ def main():
                 # The daemon will chew on "Kola borehole" and "fusion energy"
                 # instead of stale boot topics.
                 daemon.on_turn_complete(user_input, raw)
+                save_interaction(user_input, raw)
 
+                # ─── 10b. PERIODIC ARCHIVAL (NEW in v6.3) ───
+                # Every 20 turns, check if old memories need archiving
+                if turn % 20 == 0:
+                    archived = archive_old_memories()
+                    if archived > 0:
+                        mode_engine.refresh_archive_tags()
+                        print(f"[ARCHIVE] Auto-archived {archived} episodes")
+                
                 # ─── 11. SAFETY & PERSISTENCE ───
+                            
+
                 if not paradox_guard.run_all_checks(raw):
                     print("SignalBot: Paradox detected.\n")
-                    break
 
-                save_interaction(user_input, raw)
+
+                
                 mem_stateful.notify_new_message()
 
                 print(f"SignalBot: {raw}\n")
+
+                if speech_mode:
+                    speak(raw, blocking=False)  # Non-blocking so user can interrupt
 
                 # ─── 12. PROACTIVE INITIATIVE ───
                 if cog_state.should_initiate():

@@ -197,7 +197,7 @@ def get_curiosity_signal(user_input: str = "", bot_output: str = "") -> Curiosit
     # Raw intensity (same formula as v1 but cleaner)
     raw_intensity = (
         state.curiosity * 0.60 +
-        (1.0 - state.cognitive_load) * 0.25 -
+        (1.0 - state.cognitive_load) * 0.2 -
         state.frustration * 0.20
     )
     raw_intensity = max(0.0, min(1.0, raw_intensity))

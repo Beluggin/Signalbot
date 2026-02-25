@@ -1,7 +1,7 @@
 # temporal_daemon.py
 """
 ═══════════════════════════════════════════════════════════════════
-TEMPORAL DAEMON v4 — Curiosity Growth Edition
+TEMPORAL DAEMON v5 — Cognitive Modes Integration
 ═══════════════════════════════════════════════════════════════════
 
 FIX LOG:
@@ -10,8 +10,8 @@ FIX LOG:
   v3: Goal lifecycle (feed/resolve/retire)
   v4: CURIOSITY GROWTH — sustained attention BUILDS interest.
       Conversation context buffer for richer evaluation.
-      Goals the daemon actively thinks about get MORE interesting,
-      not less. "ADHD in reverse" is fixed.
+  v5: COGNITIVE MODES — mode decay in cleanup phase,
+      periodic memory archival, mode engine integration.
 
 KEY CHANGE:
   Before: daemon.evaluate() → score goals → curiosity decays → boredom
@@ -40,6 +40,14 @@ from collections import deque
 from cognitive_state import get_cognitive_state
 from indelible_facts import get_indelible_keywords, get_indelible_engine
 from goal_engine_DAEMON import GoalEngine, Goal, ActionCandidate
+
+# v5: Cognitive modes integration
+try:
+    from cognitive_modes import get_mode_engine
+    from memory_archive import archive_old_memories
+    MODES_AVAILABLE = True
+except ImportError:
+    MODES_AVAILABLE = False
 
 
 class Phase(IntEnum):
@@ -101,7 +109,7 @@ class ConversationContext:
     Gives the daemon "memory" of what was recently discussed,
     so it can boost goals that relate to active topics.
     """
-    def __init__(self, max_turns: int = 5):
+    def __init__(self, max_turns: int = 10):
         self._turns: deque = deque(maxlen=max_turns)
         self._keywords: set = set()
 
@@ -910,6 +918,24 @@ class TemporalDaemon:
 
             self._lifecycle.cleanup(set(self._goals.goals.keys()))
 
+        # v5: Mode decay — let inactive modes fade each cycle
+        if MODES_AVAILABLE:
+            try:
+                get_mode_engine().decay_all_modes()
+            except Exception:
+                pass
+        get_plan_buffer().daemon_check()
+        # v5: Periodic archival — every 500 cycles (~50 seconds),
+        # check if old memories need compressing to archive
+        if MODES_AVAILABLE and self._cycle_count > 0 and self._cycle_count % 500 == 0:
+            try:
+                archived = archive_old_memories()
+                if archived > 0:
+                    get_mode_engine().refresh_archive_tags()
+                    print(f"[DAEMON] Auto-archived {archived} episodes")
+            except Exception as e:
+                print(f"[DAEMON] Archive error: {e}")
+
     # ═══ DIAGNOSTIC ═══
 
     def get_status(self) -> str:
@@ -918,11 +944,18 @@ class TemporalDaemon:
             nr, nu = len(self._recommendations), len(self._user_urgent)
             ng = len(self._goals.goals)
             total_curio = sum(g.curiosity for g in self._goals.goals.values())
+        mode_info = ""
+        if MODES_AVAILABLE:
+            try:
+                mode_info = f" | {get_mode_engine().get_status()}"
+            except Exception:
+                pass
         return (f"[DAEMON] {st} | cycle={self._cycle_count} | "
                 f"phase={Phase(self._phase).name} | goals={ng} | "
                 f"recs={nr} | urgent={nu} | "
                 f"good_sense={compute_good_sense(self._cog_state):.2f} | "
-                f"total_curio={total_curio:.2f}/{CURIOSITY_TOTAL_BUDGET:.0f}")
+                f"total_curio={total_curio:.2f}/{CURIOSITY_TOTAL_BUDGET:.0f}"
+                f"{mode_info}")
 
 
 # SINGLETON
