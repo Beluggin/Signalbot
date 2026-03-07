@@ -1,3 +1,11 @@
+## License
+
+SignalBot is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+Patent Pending — Canadian Patent Application filed March 6, 2026.
+
+For commercial licensing inquiries, contact: [crater_noggin@hotmail.com]
+
 # SignalBot v6.2 - Autonomous Cognitive Architecture
 
 Temporal daemon with continuous background cognition.
