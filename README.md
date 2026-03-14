@@ -27,6 +27,10 @@ Temporal daemon with continuous background cognition.
 ## Files
 See source comments for architecture details.
 
+## Dependencies
+pip install requests numpy anthropic
+ollama pull mistral:N phi3 gemma2:N
+
 ## Status
 EXPERIMENTAL - Daemon integration working, needs extended testing.
 
@@ -40,10 +44,8 @@ pip install numpy requests
 
 python3 signalbot.py
 
-torch placeholder for when i actually get around to learning that
+## Notes
+Claude API is ideal, low level cross session persistence across all models.  Watch out for Phi...it gets weird.
 
-code is subject to rapid (possibly breaking) change. values need tweaking depending on system.
-
-Feb 10 successfully tested Phi3 and gemma2:2b instead of Mistral7b. Signalbot definitely likes Phi3 least and gemma best.  Claude API is ideal, around 0.02 a message.
-
-Phi instability starts almost immediately, Claude API starts around 100 turns.
+## System requirements
+2-6 minute response time on a 10 year old laptop with no GPU.  20s-180s response time based on 4060 8gb and 16gb DDR5 on an intel i5-14400.
