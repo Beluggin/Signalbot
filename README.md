@@ -1,3 +1,11 @@
+# Signalbot v7 Self evolve
+
+Inspired by yoyo-evolve
+
+Signalbot runs an API call to Opus every 4 hours targeting one fix it determines itself.
+Some silent failure fixes
+
+
 # SignalBot v6.41 Web UI w/web search and single directory sandbox and self code analysis
 
 Added GUI for a web based app with usuer profiles
