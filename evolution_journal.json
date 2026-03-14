@@ -1,0 +1,173 @@
+[
+  {
+    "day": 1,
+    "timestamp": "2026-03-08T14:45:20.118421",
+    "status": "success",
+    "assessment": "In `signalbot.py`, the `\"plans\"` command on line ~168 prints the literal string `\"get_plan_buffer().get_full_report()\"` instead of actually calling the function — it's missing an `f`-string or direct call. This is a straightforward bug: the user types `plans` expecting to see their plan buffer, and instead gets a raw code string printed to the console. This is a crash-free but functionally broken command.",
+    "change": "Fix the `plans` command to actually call `buf.get_full_report()` instead of printing the string literal. The variable `buf` is already initialized earlier as `buf = get_plan_buffer()`, so we just need to use it properly.",
+    "filename": "signalbot.py",
+    "journal": "Day 1 — Fixed the `plans` command which was printing a literal string instead of calling `buf.get_full_report()`. This was a copy-paste bug where the f-string contained code text rather than an expression. Next cycle should look at the duplicate `list code` / `read code` command blocks in the main l"
+  },
+  {
+    "day": 2,
+    "timestamp": "2026-03-08T14:57:58.986089",
+    "status": "success",
+    "assessment": "In `signalbot.py`, there's a duplicate block of code: the `\"list code\"` check and the `\"read code\"` check each appear twice (lines ~230-240 and again ~245-255). The second `\"read code\"` block uses a different variable name (`code_ctx` instead of `code_injection`), meaning the code context loaded in the second block is never actually injected into the prompt — only the first block's `code_injection` variable gets used in prompt construction. The first `\"list code\"` block correctly hits `continue`, but the second one also does, so it's just dead code. The duplicate `\"read code\"` block silently overwrites the work of the first block with a variable that goes nowhere. This is both a bug (wasted computation, confusing control flow) and context waste.",
+    "change": "Remove the duplicate `\"list code\"` and `\"read code\"` blocks (the second pair). The first pair already handles both commands correctly — `code_injection` is set and falls through to turn processing where it gets injected into the prompt. The second pair uses `code_ctx` (a local variable that's never referenced again), so the code read is lost. Removing the duplicates eliminates dead code and prevents confusion about which block actually runs.",
+    "filename": "signalbot.py",
+    "journal": "Removed duplicate `\"list code\"` and `\"read code\"` command handlers in signalbot.py's main loop. The second `\"read code\"` block was using a local variable `code_ctx` instead of `code_injection`, so the loaded code was silently discarded and never reached the prompt. Next cycle should look at the `res"
+  },
+  {
+    "day": 3,
+    "timestamp": "2026-03-08T18:58:14.220349",
+    "status": "success",
+    "assessment": "In `response_engine.py`, the Anthropic API key is hardcoded in plaintext directly in the source code (line ~20). Same for the Mistral API key (line ~25). This is a significant security issue — if this code is ever committed to a repo, shared, or read by the evolution system (which injects code into prompts), the keys are exposed. These should be read from environment variables with the hardcoded values as fallbacks at most, but ideally removed from source entirely.",
+    "change": "Replace hardcoded API keys with `os.environ.get()` lookups. The keys will be read from environment variables `ANTHROPIC_API_KEY` and `MISTRAL_API_KEY`. If the env vars aren't set, the current hardcoded values serve as fallbacks (so nothing breaks immediately), but this enables the user to move keys to env vars and then remove the fallback strings. This is a security improvement — the code_reader injects this file into LLM prompts, meaning API keys are currently being sent to every model on every `read code` command.",
+    "filename": "response_engine.py",
+    "journal": "Removed hardcoded API keys from response_engine.py, replacing them with `os.environ.get()` lookups. The keys were being exposed every time `read code` injected the source into an LLM prompt — a security leak that compounds with every model call. Next cycle should look at the silent `except Exception"
+  },
+  {
+    "day": 4,
+    "timestamp": "2026-03-08T22:58:31.720811",
+    "status": "success",
+    "assessment": "In `memory_engine.py`, the `_load_all()` function has a bare `except Exception` that silently returns an empty list when the memory file is corrupted or unreadable. This means if `memory_log.json` gets corrupted (partial write, disk error, JSON syntax error), SignalBot silently loses ALL memory with no indication anything went wrong. This is a silent failure that could cause severe memory loss bugs — the user would see `(none)` for recent memory and have no idea why.",
+    "change": "Add error logging to the silent `except` blocks in `_load_all()` and `_save_all()` so memory corruption is visible instead of silently swallowed. Also add a basic corruption recovery mechanism that backs up the corrupted file before returning empty, so the data isn't permanently lost.",
+    "filename": "memory_engine.py",
+    "journal": "Fixed silent failure in memory_engine.py where JSON corruption in memory_log.json was swallowed by a bare `except`, causing total memory loss with zero diagnostics. Now logs the error, validates the root type is a list, and backs up corrupted files to `memory_corrupt_backups/` so data can be recover"
+  },
+  {
+    "day": 5,
+    "timestamp": "2026-03-09T02:58:50.874778",
+    "status": "success",
+    "assessment": "In `signalbot.py`, the main loop has a `try/except` block wrapping the entire conversation loop, but there's a critical bug: when the user types a command like `\"read code\"` or `\"search ...\"` without any additional conversational content, the code falls through to turn processing and increments the turn counter, runs the daemon pause/resume cycle, and generates an LLM response using just the command text as user input. More importantly, I found a **silent failure** in `response_engine.py`: the `NUM_CTX` is set to only `1200` tokens, which is extremely low for the prompts SignalBot constructs. The prompt includes identity, long memory, daemon cognition, mode awareness, archive context, search results, recent conversation, and more — easily exceeding 1200 tokens. When the context window is too small, Ollama silently truncates the prompt from the beginning, meaning the system instructions and identity get dropped first. This causes the model to lose its personality, confabulate, and ignore core instructions. For Anthropic/Mistral this doesn't matter (they use `max_tokens` for output only), but for local Ollama models this is a major quality bug.",
+    "change": "Increase `NUM_CTX` from 1200 to 4096 for Ollama models. The current value of 1200 is far too small for the multi-section prompts SignalBot constructs (identity + long memory + daemon cognition + modes + recent conversation easily exceeds 2000 tokens). When the context is too small, Ollama truncates the prompt from the front, silently dropping the system identity and core instructions — this is a confabulation risk and identity loss bug. 4096 is a reasonable default that fits in memory for 2b-7b models while accommodating the full prompt. Also making it configurable via environment variable so it can be tuned without code changes.",
+    "filename": "response_engine.py",
+    "journal": "Increased Ollama NUM_CTX from 1200 to 4096 (configurable via SIGNALBOT_NUM_CTX env var). At 1200 tokens, the multi-section prompts were being silently truncated from the front by Ollama, dropping identity and system instructions — a major confabulation and identity-loss risk for local models. Next c"
+  },
+  {
+    "day": 6,
+    "timestamp": "2026-03-09T06:59:07.150752",
+    "status": "failed_syntax",
+    "assessment": "In `signalbot.py`, the main loop's `finally` block only stops the daemon, but there's no error handling within the `while True` loop itself. If any single turn crashes (e.g., a `KeyError` in mode_engine, a network timeout in web_search, or an unexpected exception in any of the turn processing steps), the entire bot exits. This is the most critical robustness issue — a single bad turn kills the session, losing the daemon state and conversation context. The turn processing block (steps 1-13) needs a try/except that catches per-turn errors, logs them, resumes the daemon, and continues to the next input.",
+    "change": "Wrap the turn processing block (everything after command handling, from `turn += 1` through `daemon.resume()`) in a try/except that catches unexpected exceptions per-turn, prints the error, ensures the daemon is resumed, and continues the loop instead of crashing. This prevents a single bad turn from killing the entire session.",
+    "filename": "signalbot.py",
+    "journal": "FAILED: Patch produces syntax error: expected 'except' or 'finally' block (<unknown>, line 536). Added per-turn crash recovery in signalbot.py's main loop. Previously, any uncaught exception during turn processing (memory loading, mode engine, LLM call, state updates) would crash the entire session and kill the daemon. Now exceptions are caught per-turn, logged with the error type and message,"
+  },
+  {
+    "day": 7,
+    "timestamp": "2026-03-09T10:59:22.824988",
+    "status": "failed_syntax",
+    "assessment": "In `signalbot.py`, the main loop has no per-turn error handling. If any exception occurs during turn processing (e.g., a network timeout in the LLM call, a memory engine error, a mode engine crash), the entire bot crashes and the `finally` block runs shutdown. Day 6 attempted to fix this but failed due to a syntax error. This is the highest-priority fix remaining — a crash bug that should be addressed before any feature work.",
+    "change": "Wrap the turn processing block (everything after command handling, starting at `turn += 1`) in a try/except that catches exceptions, prints the error, and continues the loop instead of crashing. The Day 6 attempt failed because it likely broke the try/finally structure. The correct approach is to add an inner try/except around just the turn processing, inside the existing try/finally.",
+    "filename": "signalbot.py",
+    "journal": "FAILED: Patch produces syntax error: expected 'except' or 'finally' block (<unknown>, line 369). Added per-turn crash recovery in signalbot.py's main loop. Any exception during turn processing (LLM timeout, memory corruption, mode engine error) now prints the error and continues the conversation loop instead of killing the bot. The daemon is resumed in the except block to prevent it from stayin"
+  },
+  {
+    "day": 8,
+    "timestamp": "2026-03-09T14:59:38.475974",
+    "status": "failed_syntax",
+    "assessment": "Days 6 and 7 both failed trying to add per-turn error handling in the main loop. The issue is real and important: any exception during turn processing (e.g., a network timeout in memory loading, a KeyError in mode_engine, or a bug in prompt construction) crashes the entire bot, losing the daemon and all state. This is the highest-priority fix remaining (crash fix category). The previous patches failed due to syntax errors with the try/except placement. I need to be very precise about the indentation and the exact code boundaries.",
+    "change": "Wrap the turn processing block (from `turn += 1` through `daemon.resume()`) in a try/except that catches and logs exceptions without killing the main loop. The key insight from the Day 6/7 failures is that the patch must be surgically placed around the right code boundaries. I'll wrap the entire turn processing section including the `daemon.resume()` call, ensuring the daemon always gets resumed even on error.",
+    "filename": "signalbot.py",
+    "journal": "FAILED: Patch produces syntax error: expected an indented block after 'try' statement on line 367 (<unknown>, line 369). Third attempt at per-turn crash recovery (Days 6-7 failed on syntax). This time I split the patch into two surgical insertions: opening the `try:` right after `daemon.pause()`, and replacing the bare `daemon.resume()` with an `except/finally` block that logs the error with full traceback and guarant"
+  },
+  {
+    "day": 9,
+    "timestamp": "2026-03-09T18:59:54.854337",
+    "status": "success",
+    "assessment": "Days 6, 7, and 8 all failed trying to add per-turn error handling in signalbot.py's main loop. The repeated failures suggest the patch format is struggling with the complex indentation structure of the main loop. I'm going to take a different approach: instead of wrapping the entire turn processing block in a try/except (which requires matching indentation across hundreds of lines), I'll wrap just the `generate_response` call — the single most likely point of failure — in a targeted try/except. This is the most crash-prone line (network calls, API errors, timeouts) and a failure there currently kills the entire session.",
+    "change": "Adding a top-level safety wrapper in `generate_response()` so that any unexpected/uncaught exception from any backend returns a graceful error string instead of propagating up and crashing the main loop. Each backend function already has its own try/except, but the dispatch logic itself and any edge cases (e.g., `anthropic` import succeeding but client construction failing in an unexpected way) can still throw. This is the surgical, minimal fix that achieves what Days 6-8 were trying to do — prevent turn crashes — but at the right layer.",
+    "filename": "response_engine.py",
+    "journal": "Days 6-8 failed trying to add try/except around the entire turn processing block in signalbot.py — the indentation complexity kept producing syntax errors. Instead, I wrapped `generate_response()` itself with a top-level safety net. This is the single most crash-prone call in the turn pipeline (netw"
+  },
+  {
+    "day": 10,
+    "timestamp": "2026-03-09T23:00:13.883212",
+    "status": "success",
+    "assessment": "The `memory_engine.py` `_load_all()` function has a silent failure path: when `MEMORY_PATH.exists()` returns `True` but the file is empty (0 bytes), `json.loads(\"\")` raises `JSONDecodeError`, which is caught and triggers the corruption backup workflow — but an empty file isn't corruption, it's a common race condition (e.g., crash during write). More critically, `_save_all()` has a bare `except` that prints an error but **returns silently**, meaning the caller (`save_interaction`) thinks the write succeeded when it didn't. If the next `_load_all()` reads the old file, the interaction is permanently lost with no indication. This is a memory decay bug — the highest priority category after crash fixes.",
+    "change": "Make `_save_all()` use atomic write (write to temp file, then rename) to prevent partial/empty writes that corrupt memory_log.json. This eliminates the root cause of the empty-file corruption path and prevents data loss from interrupted writes. Also handle the empty-file case in `_load_all()` without triggering the corruption backup.",
+    "filename": "memory_engine.py",
+    "journal": "Made `_save_all()` in memory_engine.py use atomic writes (write to .tmp, then rename) to prevent the root cause of memory file corruption from interrupted writes or crashes mid-save. Also added an empty-file check in `_load_all()` so that a 0-byte file (common after power loss) doesn't trigger the c"
+  },
+  {
+    "day": 11,
+    "timestamp": "2026-03-10T03:00:33.225965",
+    "status": "success",
+    "assessment": "The `signalbot.py` main loop has a critical bug: when the user types `read code` (without a follow-through message), the turn processing runs with `user_input = \"read code\"` or `\"read code <filename>\"`, which is a command, not a real conversational turn. This wastes an LLM call on a command string. More importantly, the `search` and `news` commands have the same issue — they fall through to turn processing, which is intentional for those (so SignalBot can discuss results), but `read code` without additional context just sends \"read code\" as the user message. However, there's a more impactful issue: the daemon's `_phase_cleanup` imports `get_plan_buffer` at the top level but it's actually imported from `plan_buffer` only in `signalbot.py`. Looking more carefully — the cleanup phase calls `get_plan_buffer().daemon_check()` but `get_plan_buffer` is not imported in `temporal_daemon.py`. This would cause a `NameError` every cleanup cycle, silently swallowed by the `except Exception: pass` block. This is a silent failure that prevents plan buffer daemon checks from ever running.",
+    "change": "The `_phase_cleanup` method calls `get_plan_buffer().daemon_check()` but `get_plan_buffer` is never imported in `temporal_daemon.py`. This means every single cleanup cycle (every ~1 second), a `NameError` is raised and silently swallowed by `except Exception: pass`. The plan buffer's daemon check never actually runs. Fix: add the import at the top of the file alongside the other conditional imports, and while we're at it, stop silently swallowing the error so future issues are visible.",
+    "filename": "temporal_daemon.py",
+    "journal": "Found that `temporal_daemon.py` calls `get_plan_buffer().daemon_check()` every cleanup cycle but never imports `get_plan_buffer` — causing a silent `NameError` swallowed by a bare `except`. Added the missing import and split the try/except blocks so plan_buffer and mode_engine failures are independe"
+  },
+  {
+    "day": 12,
+    "timestamp": "2026-03-10T07:00:48.620018",
+    "status": "success",
+    "assessment": "In `signalbot.py`, the daemon's `consume_code_refresh()` method is never called. The REFLECT phase (phase 9) sets `_code_refresh_pending = True` every 100 cycles (~100 seconds), but nothing in the main loop checks this flag. This means the v7ys code self-model refresh feature is completely dead code — the daemon signals \"time to re-read my own code\" but nobody listens. This is a context waste bug: the daemon does work to track code refresh timing, but the result is never consumed.",
+    "change": "Add a check at the start of each turn (after getting the daemon snapshot, before prompt construction) that consumes the code refresh flag and auto-injects code context. This completes the cognitive loop where the daemon's REFLECT phase can trigger periodic self-model updates without user intervention. The check is placed right after `daemon_snapshot` is obtained since that's where we already read daemon state.",
+    "filename": "signalbot.py",
+    "journal": "Connected the daemon's REFLECT phase code-refresh signal to the main loop — `consume_code_refresh()` was being set every 100 cycles but never read, making it dead code. Now the main loop auto-injects code context when the daemon flags it, completing the self-model maintenance loop for v7ys evolution"
+  },
+  {
+    "day": 13,
+    "timestamp": "2026-03-10T11:01:01.854147",
+    "status": "success",
+    "assessment": "The `signalbot.py` main loop has a silent failure pattern in the `except` clause of the per-turn error handling added on Day 9. Looking more carefully, I notice a different issue: the `_phase_cleanup` method in `temporal_daemon.py` has a `try/except` block around `get_plan_buffer().daemon_check()` and `get_mode_engine().decay_all_modes()` that catches ALL exceptions silently (`except Exception: pass`). This means if `plan_buffer.daemon_check()` crashes, `decay_all_modes()` is also skipped — and neither failure is ever reported. These are two independent operations bundled under one silent catch-all.",
+    "change": "Split the silent `try/except` block in `_phase_cleanup` into two separate try/except blocks, each with error logging. Currently if `daemon_check()` throws, `decay_all_modes()` is silently skipped too. And neither error is ever reported, making debugging impossible. This is a \"silent failure\" fix per the priority list.",
+    "filename": "temporal_daemon.py",
+    "journal": "Split the silent catch-all `except: pass` in `_phase_cleanup` into two independent try/except blocks with throttled error logging (every 100 cycles to avoid spam). Previously, a crash in `daemon_check()` would silently skip `decay_all_modes()` too, and neither failure would ever be reported. Next cy"
+  },
+  {
+    "day": 14,
+    "timestamp": "2026-03-10T15:01:20.400857",
+    "status": "success",
+    "assessment": "The `_phase_reflect` method in `temporal_daemon.py` increments `self._cycles_since_code_read` and sets `self._code_refresh_pending` outside the lock, but `self._code_refresh_pending` is read by `consume_code_refresh()` from the main thread (during turn processing). More critically, I notice a functional issue: the REFLECT phase seeds \"connection\" and \"novelty\" meta-goals, but these seeds can accumulate unboundedly if the daemon runs many cycles without a conversation turn consuming them (since `consume_reflection_seeds` is only called in phase 0 of the *next* cycle, seeds are consumed). Actually, looking more carefully — seeds ARE consumed each cycle in phase 0. But there's a real problem: the `_phase_reflect` method's code refresh counter (`_cycles_since_code_read`) is incremented **outside** the lock, creating a race condition, and more importantly, the counter resets to 0 even when `consume_code_refresh()` hasn't been called yet. If the main loop doesn't consume the flag before the next 100 cycles, the flag gets set again (harmless) but the counter resets regardless. However, the bigger practical issue I see is: in `signalbot.py`, when `speech_mode` is True, the code calls `listen(timeout=10.0)` but the import is `listen_push_to_talk` — `listen` is never defined. This would crash immediately when speech mode is enabled.",
+    "change": "Fix the undefined `listen` function call. The import brings in `listen_push_to_talk` but the main loop calls `listen(timeout=10.0)`, which would raise a `NameError` and crash SignalBot the moment anyone enables speech mode. This is a crash-priority fix.",
+    "filename": "signalbot.py",
+    "journal": "Fixed a crash bug in speech mode: the main loop called `listen()` which doesn't exist — the actual imported function is `listen_push_to_talk()`. This would have been a `NameError` the instant anyone typed \"speech on\". Next cycle should look at the thread-safety of `_cycles_since_code_read` and `_cod"
+  },
+  {
+    "day": 15,
+    "timestamp": "2026-03-10T19:01:36.273825",
+    "status": "success",
+    "assessment": "The `_phase_reflect` method in `temporal_daemon.py` increments `self._cycles_since_code_read` and sets `self._code_refresh_pending` **outside** the `self._lock` context manager, while `get_snapshot()` reads `self._code_refresh_pending` **inside** `self._lock`, and `consume_code_refresh()` reads/writes it with **no lock at all**. This is a race condition: the daemon thread writes `_code_refresh_pending = True` without holding the lock, while the main thread reads it via `consume_code_refresh()` also without the lock. On x86 this is mostly benign due to the GIL, but it's architecturally inconsistent and `_cycles_since_code_read` could also race. More importantly, `consume_code_refresh()` does a read-then-write (check flag, then clear it) which is a classic TOCTOU race if ever called from multiple threads.",
+    "change": "Move `_cycles_since_code_read` increment and `_code_refresh_pending` assignment inside the existing `self._lock` block in `_phase_reflect`, and add lock protection to `consume_code_refresh()`. This eliminates the race condition between the daemon thread (writing) and the main thread (reading/clearing).",
+    "filename": "temporal_daemon.py",
+    "journal": "Fixed a thread-safety race condition in `temporal_daemon.py`: `_code_refresh_pending` and `_cycles_since_code_read` were written by the daemon thread in `_phase_reflect` outside the lock, while read/cleared by the main thread in `consume_code_refresh()` also without the lock. Both paths now use `sel"
+  },
+  {
+    "day": 16,
+    "timestamp": "2026-03-10T23:01:51.154257",
+    "status": "success",
+    "assessment": "The `memory_engine.py` `_load_all()` function has a silent data loss risk: if `memory_log.json` contains a non-list root (e.g., a dict from corruption or a bad write), it prints a warning but returns an empty list. The next `save_interaction()` call will then overwrite the file with a list containing only the new interaction, destroying all previous data. This is the same class of bug as the JSON corruption path (which correctly backs up), but the non-list case doesn't preserve the original file.",
+    "change": "When `memory_log.json` exists but contains a non-list root type, back up the file before returning empty — just like we do for JSON decode errors. This prevents silent data loss if the file gets corrupted into a valid-but-wrong JSON structure (e.g., a dict, a string, a number). This is a crash/data-loss fix, highest priority tier.",
+    "filename": "memory_engine.py",
+    "journal": "Found a data-loss bug in `memory_engine.py`: when `memory_log.json` parses as valid JSON but isn't a list (e.g., a dict from partial corruption), the file was logged as a warning but not backed up — then the next `save_interaction()` would overwrite it with a single-entry list, destroying all histor"
+  },
+  {
+    "day": 17,
+    "timestamp": "2026-03-11T03:02:18.321143",
+    "status": "success",
+    "assessment": "The `memory_engine.py` `_save_all()` function has a silent failure mode: if `json.dumps()` succeeds but `tmp_path.write_text()` or `tmp_path.replace()` fails, the interaction is silently lost — the caller `save_interaction()` has no idea the write failed, and the in-memory `rows` list (which included the new interaction) is discarded. More critically, `save_interaction()` does a read-modify-write cycle with no protection: if two rapid calls overlap (e.g., the proactive initiative save at line ~470 racing with the normal save at line ~465), both read the same base, and one write overwrites the other, losing a turn. However, the more impactful and safer fix is in `signalbot.py`: the `save_interaction()` call at line ~465 happens *inside* the `with timed(\"TOTAL\")` block, meaning every turn's response time includes a synchronous disk write (JSON serialize + file write + atomic rename). This adds unnecessary latency to the user-visible response time. The save should happen *after* printing the response, so the user sees the reply immediately while the disk write happens afterward.",
+    "change": "Move `save_interaction()` to after the response is printed and spoken, but still inside the try block. Currently the order is: save → print → speak. It should be: print → speak → save. This way the user gets their response immediately without waiting for disk I/O. The save still happens before the daemon resumes, maintaining data integrity.",
+    "filename": "signalbot.py",
+    "journal": "Moved `save_interaction()` to after printing the response and initiating speech, so the user sees/hears the reply immediately without waiting for disk I/O (JSON serialize + atomic file write). This is a latency optimization — on slow storage or large memory files, the write can add noticeable delay."
+  },
+  {
+    "day": 18,
+    "timestamp": "2026-03-11T07:02:50.043129",
+    "status": "success",
+    "assessment": "The `_phase_reflect` method in `temporal_daemon.py` can generate unbounded reflection seeds that accumulate if `consume_reflection_seeds()` isn't called quickly enough or if the daemon runs many cycles between user turns. Specifically, the \"connection\" and \"novelty\" seeds are generated every cycle, and while `_reflection_seeds` is cleared at the start of each REFLECT phase, the seeds consumed in phase 0 (`CHECK_GOALS`) feed directly into `add_rabbit_hole` without any deduplication against goals that were *just added by a previous cycle's reflection*. This means during long idle periods (e.g., user away for minutes), the daemon will repeatedly create \"Explore connection between: X & Y\" goals every cycle, since the dedup check in `_phase_check_goals` only matches the first 30 chars — but the thriving goal descriptions change as goals rotate, producing slightly different connection strings that bypass the prefix check.",
+    "change": "Add a cooldown to reflection seed generation in `_phase_reflect`. Currently, seeds are generated every single cycle (every ~1 second), which during idle periods means the daemon creates dozens of near-duplicate meta-goals like \"Explore connection between...\" and \"Seek novel direction...\" before they can be cleaned up. Adding a minimum cycle interval between seed generation (e.g., every 50 cycles ≈ 50 seconds) prevents this goal pollution while still allowing the REFLECT phase to do its evaluation and summary work every cycle.",
+    "filename": "temporal_daemon.py",
+    "journal": "Fixed a goal pollution bug in `_phase_reflect`: reflection seeds (connection, novelty, escalation goals) were generated every single 1-second cycle, causing dozens of near-duplicate meta-goals during idle periods since the 30-char prefix dedup in CHECK_GOALS couldn't catch the slight description var"
+  },
+  {
+    "day": 19,
+    "timestamp": "2026-03-11T11:03:11.695001",
+    "status": "success",
+    "assessment": "The `_phase_cleanup` method in `temporal_daemon.py` has a silent failure pattern: the `try/except` blocks around `plan_buffer.daemon_check()` and `decay_all_modes()` only print errors every 100 cycles (`if self._cycle_count % 100 == 0`). This means if either of these calls starts failing persistently (e.g., due to a corrupted state file), 99 out of 100 errors are silently swallowed. More critically, the periodic archival block at the bottom of `_phase_cleanup` catches exceptions and prints them every time, but the `archive_old_memories()` call could throw repeatedly without any throttling or escalation. However, there's a more impactful issue: the `_phase_evaluate` method accesses `self._goals.goals` without holding `self._lock`, while `_phase_cleanup` and `feed_goals_from_turn` (called from the main thread via `on_turn_complete`) both mutate `self._goals.goals`. This is a thread-safety bug that can cause `RuntimeError: dictionary changed size during iteration`.",
+    "change": "In `_phase_evaluate`, the iteration over `self._goals.goals.items()` happens without holding `self._lock`, but `on_turn_complete` (called from the main thread) can add/remove goals from `self._goals.goals` concurrently via `feed_goals_from_turn` and `resolve_discussed_goals`. This can cause a `RuntimeError: dictionary changed size during iteration` crash. The fix is to snapshot the goals dict under the lock before iterating. This is the same pattern already used in `_phase_determine_actions` where `scored` is built under the lock then iterated outside it.",
+    "filename": "temporal_daemon.py",
+    "journal": "Fixed a thread-safety bug in `_phase_evaluate`: iterating over `self._goals.goals.items()` without the lock while the main thread can concurrently add/remove goals via `on_turn_complete` → `feed_goals_from_turn`. This causes `RuntimeError: dictionary changed size during iteration` under load. Snapsh"
+  }
+]

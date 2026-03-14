@@ -1,0 +1,145 @@
+{
+  "facts": [
+    {
+      "id": "5d48d669924f",
+      "fact": "User's name is Adam",
+      "category": "name",
+      "first_mentioned": 1771401913.2954676,
+      "last_confirmed": 1771402481.8220785,
+      "confirmation_count": 2,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "caf6696854c5",
+      "fact": "User's daughter's name is Sophie",
+      "category": "name",
+      "first_mentioned": 1771404857.2356586,
+      "last_confirmed": 1771404857.2356586,
+      "confirmation_count": 1,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "58962fd2dd3e",
+      "fact": "User's son's name is Mason",
+      "category": "name",
+      "first_mentioned": 1771451297.5111167,
+      "last_confirmed": 1772585429.636666,
+      "confirmation_count": 4,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "a32b4ad6b37c",
+      "fact": "User's name is Trying",
+      "category": "name",
+      "first_mentioned": 1771470976.8624218,
+      "last_confirmed": 1771470976.8624218,
+      "confirmation_count": 1,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "50f996de9748",
+      "fact": "User's name is Working",
+      "category": "name",
+      "first_mentioned": 1771537832.633127,
+      "last_confirmed": 1772593147.0736773,
+      "confirmation_count": 2,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "04cc5ea14a7a",
+      "fact": "User's name is Chris.",
+      "category": "name",
+      "first_mentioned": 1772151295.8033385,
+      "last_confirmed": 1772151295.8033385,
+      "confirmation_count": 1,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "e47f7d855a0e",
+      "fact": "User's name is Chris,",
+      "category": "name",
+      "first_mentioned": 1772152282.0381322,
+      "last_confirmed": 1772152282.0381322,
+      "confirmation_count": 1,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "e943730b6cae",
+      "fact": "User's name is Now",
+      "category": "name",
+      "first_mentioned": 1772578364.134253,
+      "last_confirmed": 1772578364.134253,
+      "confirmation_count": 1,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "1c10c104e81a",
+      "fact": "User's name is Gonna",
+      "category": "name",
+      "first_mentioned": 1772583566.1684332,
+      "last_confirmed": 1772592076.3909373,
+      "confirmation_count": 3,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "df4825e67f69",
+      "fact": "User's name is Going",
+      "category": "name",
+      "first_mentioned": 1772585176.0935435,
+      "last_confirmed": 1772585176.0935435,
+      "confirmation_count": 1,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "808c1d25eebd",
+      "fact": "User's name is Wondering",
+      "category": "name",
+      "first_mentioned": 1772585658.6043563,
+      "last_confirmed": 1772918169.7788253,
+      "confirmation_count": 2,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "dbd6cbbf8d5b",
+      "fact": "User's name is Hoping",
+      "category": "name",
+      "first_mentioned": 1772601443.6507707,
+      "last_confirmed": 1772876271.427887,
+      "confirmation_count": 2,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "d22578e6d425",
+      "fact": "User's name is Adam.",
+      "category": "name",
+      "first_mentioned": 1773112811.1952007,
+      "last_confirmed": 1773112811.1952007,
+      "confirmation_count": 1,
+      "locked": true,
+      "importance": 5.0
+    },
+    {
+      "id": "10af10f967a7",
+      "fact": "User's name is Not",
+      "category": "name",
+      "first_mentioned": 1773112995.8603077,
+      "last_confirmed": 1773112995.8603077,
+      "confirmation_count": 1,
+      "locked": true,
+      "importance": 5.0
+    }
+  ],
+  "last_updated": 1773112995.8603833
+}

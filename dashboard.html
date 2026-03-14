@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SignalBot — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0a0a0f;
+    --surface: #111118;
+    --surface2:#16161f;
+    --border:  #1e1e2e;
+    --accent:  #00ff9d;
+    --accent2: #ff3c6e;
+    --warn:    #ffcc00;
+    --text:    #e2e2f0;
+    --muted:   #555570;
+    --mono:    'Space Mono', monospace;
+    --display: 'Syne', sans-serif;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* grid bg */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,157,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,157,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,10,15,0.9);
+    backdrop-filter: blur(8px);
+  }
+  .nav-brand {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: var(--accent);
+    letter-spacing: -0.01em;
+  }
+  .nav-brand span { color: var(--muted); font-weight: 400; font-size: 0.75rem; margin-left: 0.75rem; }
+  .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+  .nav-links a {
+    color: var(--muted); text-decoration: none;
+    font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+    transition: color 0.15s;
+  }
+  .nav-links a:hover, .nav-links a.active { color: var(--accent); }
+  .nav-user {
+    font-size: 0.7rem; color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+  .nav-user strong { color: var(--text); }
+
+  /* ── MAIN ── */
+  main {
+    position: relative; z-index: 1;
+    flex: 1;
+    padding: 2rem;
+    max-width: 1100px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .page-header {
+    margin-bottom: 2rem;
+    display: flex; align-items: baseline; gap: 1rem;
+  }
+  .page-header h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1.4rem;
+    color: var(--text);
+  }
+  .page-header .ts {
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* ── STAT CARDS ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 1.25rem 1.5rem;
+    position: relative;
+    animation: cardin 0.5s ease both;
+  }
+  .stat-card:nth-child(2) { animation-delay: 0.05s; }
+  .stat-card:nth-child(3) { animation-delay: 0.1s; }
+  .stat-card:nth-child(4) { animation-delay: 0.15s; }
+  .stat-card:nth-child(5) { animation-delay: 0.2s; }
+  @keyframes cardin {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  /* corner accent */
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    top: -1px; right: -1px;
+    width: 8px; height: 8px;
+    border-top: 2px solid var(--accent);
+    border-right: 2px solid var(--accent);
+  }
+  .stat-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.6rem;
+  }
+  .stat-value {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1.6rem;
+    color: var(--text);
+    line-height: 1;
+  }
+  .stat-value.accent  { color: var(--accent); }
+  .stat-value.warn    { color: var(--warn); }
+  .stat-value.danger  { color: var(--accent2); }
+  .stat-sub {
+    font-size: 0.6rem; color: var(--muted); margin-top: 0.4rem;
+  }
+
+  /* online badge */
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-family: var(--display);
+    font-size: 1rem; font-weight: 700;
+    color: var(--accent);
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── BOTTOM GRID ── */
+  .bottom-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 700px) { .bottom-grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .panel-header {
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .panel-title {
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .panel-body { padding: 1rem 1.25rem; }
+
+  /* activity log */
+  .activity-list { list-style: none; }
+  .activity-list li {
+    display: flex; gap: 1rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.75rem;
+  }
+  .activity-list li:last-child { border-bottom: none; }
+  .act-time { color: var(--muted); min-width: 42px; }
+  .act-event { color: var(--text); }
+
+  /* quick links */
+  .quick-links { display: flex; flex-direction: column; gap: 0.75rem; }
+  .quick-link {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.85rem 1rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    text-decoration: none;
+    color: var(--text);
+    font-size: 0.8rem;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .quick-link:hover { border-color: var(--accent); background: rgba(0,255,157,0.05); }
+  .quick-link .arr { color: var(--accent); }
+
+  .stub-badge {
+    display: inline-block;
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--warn);
+    color: var(--warn);
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">SIGNALBOT <span>HOME BASE</span></div>
+  <div class="nav-links">
+    <a href="/" class="active">Dashboard</a>
+    <a href="/chat">Chat</a>
+    <a href="/logout">Logout</a>
+  </div>
+  <div class="nav-user">Logged in as <strong>{{ user }}</strong></div>
+</nav>
+
+<main>
+  <div class="page-header">
+    <h1>System Overview</h1>
+    <span class="ts" id="live-clock"></span>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Bot Status</div>
+      <div class="stat-value" id="stat-status">—</div>
+      <div class="stat-sub" id="stat-backend"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Uptime</div>
+      <div class="stat-value accent" id="stat-uptime">—</div>
+      <div class="stat-sub">this session</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Moltbook Rank</div>
+      <div class="stat-value accent" id="stat-rank">—</div>
+      <div class="stat-sub">engagement percentile</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Messages Today</div>
+      <div class="stat-value" id="stat-msgs">—</div>
+      <div class="stat-sub">across all feeds</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Cognitive State</div>
+      <div class="stat-value accent" id="stat-cog">—</div>
+      <div class="stat-sub">last post: <span id="stat-lastpost">—</span></div>
+    </div>
+  </div>
+
+  <div class="bottom-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Recent Activity</span>
+        <span class="stub-badge">stub data</span>
+      </div>
+      <div class="panel-body">
+        <ul class="activity-list" id="activity-list">
+          <li><span class="act-time">—</span><span class="act-event">Loading…</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Quick Access</span>
+      </div>
+      <div class="panel-body">
+        <div class="quick-links">
+          <a href="/chat" class="quick-link">
+            <span>Chat with SignalBot</span>
+            <span class="arr">→</span>
+          </a>
+          <a href="#" class="quick-link" style="opacity:0.4;pointer-events:none;">
+            <span>Moltbook Feed</span>
+            <span class="arr">coming soon</span>
+          </a>
+          <a href="#" class="quick-link" style="opacity:0.4;pointer-events:none;">
+            <span>Cognitive State Inspector</span>
+            <span class="arr">coming soon</span>
+          </a>
+          <a href="#" class="quick-link" style="opacity:0.4;pointer-events:none;">
+            <span>Memory Viewer</span>
+            <span class="arr">coming soon</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  // Clock
+  const clockEl = document.getElementById('live-clock');
+  const tick = () => { clockEl.textContent = new Date().toLocaleTimeString(); };
+  tick(); setInterval(tick, 1000);
+
+  // Status
+  async function loadStatus() {
+    try {
+      const res = await fetch('/api/status');
+      const d = await res.json();
+      document.getElementById('stat-status').innerHTML = d.bot_online
+        ? '<span class="status-badge"><span class="status-dot"></span>ONLINE</span>'
+        : '<span style="color:var(--accent2)">OFFLINE</span>';
+      document.getElementById('stat-backend').textContent =
+        d.backend === 'stub' ? '⚠ stub mode' : '✓ live';
+      const h = Math.floor(d.uptime_seconds/3600);
+      const m = Math.floor((d.uptime_seconds%3600)/60);
+      document.getElementById('stat-uptime').textContent =
+        h > 0 ? `${h}h ${m}m` : `${m}m`;
+      document.getElementById('stat-rank').textContent = d.moltbook_rank;
+      document.getElementById('stat-msgs').textContent = d.messages_today;
+      document.getElementById('stat-cog').textContent = d.cognitive_state;
+      document.getElementById('stat-lastpost').textContent = d.last_post;
+    } catch(e) {
+      document.getElementById('stat-status').textContent = 'ERR';
+    }
+  }
+
+  // Activity
+  async function loadActivity() {
+    try {
+      const res = await fetch('/api/activity');
+      const d = await res.json();
+      const ul = document.getElementById('activity-list');
+      ul.innerHTML = d.events.map(e =>
+        `<li><span class="act-time">${e.time}</span><span class="act-event">${e.event}</span></li>`
+      ).join('');
+    } catch(e) {}
+  }
+
+  loadStatus();
+  loadActivity();
+  setInterval(loadStatus, 15000);
+  setInterval(loadActivity, 30000);
+</script>
+</body>
+</html>

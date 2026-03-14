@@ -1,0 +1,62 @@
+{
+  "adam": {
+    "display_name": "Adam",
+    "role": "admin",
+    "passphrase_hash": "38c120683e4ca4e3cfca91ca026ce864afe0e765d556b7765721aa4e4bcd3123",
+    "salt": "d08f6581da505f46ff1a7bce0616233a",
+    "created_ts": 1772387288.9008615,
+    "last_login_ts": 1772500195.3785472,
+    "login_count": 9,
+    "admin_notes": "System creator. God mode."
+  },
+  "sophie": {
+    "display_name": "Sophie",
+    "role": "user",
+    "passphrase_hash": "b7fee9aa27da8b654ceb42c49c618ec1193bc1ff64e8e7b8d1a4acdb5af8f8a9",
+    "salt": "b22de955be0e00203fc2611e3ebc195b",
+    "created_ts": 1772387341.1633246,
+    "last_login_ts": 1772412084.431969,
+    "login_count": 2,
+    "admin_notes": ""
+  },
+  "mason": {
+    "display_name": "Mason",
+    "role": "user",
+    "passphrase_hash": "fa3cf302ffbb32ca725f10dce0790a19a158123e2a8fea8c2341c66d9f1c036d",
+    "salt": "6206430c8c02a18f73c0d42de420d213",
+    "created_ts": 1772387373.2013786,
+    "last_login_ts": 1772412233.6883535,
+    "login_count": 3,
+    "admin_notes": ""
+  },
+  "griffin": {
+    "display_name": "Griffin",
+    "role": "user",
+    "passphrase_hash": "ecd3deba54da39fbafe853b3c3e9cee5efa846d5f00fb38df5e1facf39ddfb22",
+    "salt": "484ef4da3639a528d4016a857abd083e",
+    "created_ts": 1772387411.699713,
+    "last_login_ts": 1772411714.6123006,
+    "login_count": 2,
+    "admin_notes": ""
+  },
+  "chris": {
+    "display_name": "Chris",
+    "role": "user",
+    "passphrase_hash": "f7c94451c6f165e7c3f16dfe2421a58d96fcede92e6bcdb96a61da5f92119251",
+    "salt": "3912f4cef2ffe8cf25fed6fa456bb349",
+    "created_ts": 1772387428.5047934,
+    "last_login_ts": 0.0,
+    "login_count": 0,
+    "admin_notes": ""
+  },
+  "cait": {
+    "display_name": "Cait",
+    "role": "user",
+    "passphrase_hash": "2000ee1d22464383d69ce86e0110493c16d6d4e1f8163549f2b3c674c2db9cf5",
+    "salt": "6c6ba316b740b94b35b41dbfd41d9f7d",
+    "created_ts": 1772495034.5045154,
+    "last_login_ts": 1772495070.084023,
+    "login_count": 1,
+    "admin_notes": ""
+  }
+}

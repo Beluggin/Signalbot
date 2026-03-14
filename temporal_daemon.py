@@ -1,7 +1,7 @@
 # temporal_daemon.py
 """
 ═══════════════════════════════════════════════════════════════════
-TEMPORAL DAEMON v4 — Curiosity Growth Edition
+TEMPORAL DAEMON v5 — Cognitive Modes Integration
 ═══════════════════════════════════════════════════════════════════
 
 FIX LOG:
@@ -10,8 +10,8 @@ FIX LOG:
   v3: Goal lifecycle (feed/resolve/retire)
   v4: CURIOSITY GROWTH — sustained attention BUILDS interest.
       Conversation context buffer for richer evaluation.
-      Goals the daemon actively thinks about get MORE interesting,
-      not less. "ADHD in reverse" is fixed.
+  v5: COGNITIVE MODES — mode decay in cleanup phase,
+      periodic memory archival, mode engine integration.
 
 KEY CHANGE:
   Before: daemon.evaluate() → score goals → curiosity decays → boredom
@@ -41,6 +41,14 @@ from cognitive_state import get_cognitive_state
 from indelible_facts import get_indelible_keywords, get_indelible_engine
 from goal_engine_DAEMON import GoalEngine, Goal, ActionCandidate
 
+# v5: Cognitive modes integration
+try:
+    from cognitive_modes import get_mode_engine
+    from memory_archive import archive_old_memories
+    MODES_AVAILABLE = True
+except ImportError:
+    MODES_AVAILABLE = False
+
 
 class Phase(IntEnum):
     CHECK_GOALS       = 0
@@ -52,9 +60,10 @@ class Phase(IntEnum):
     USER_URGENCY      = 6
     SUMMARIZE         = 7
     CLEANUP           = 8
+    REFLECT           = 9    # v7: Cycle reflection + seed for next pass
 
 PHASE_NAMES = {v: v.name for v in Phase}
-NUM_PHASES = 9
+NUM_PHASES = 10              # v7: 10 phases × 0.1s = 1.0s even cycle
 TICK_INTERVAL = 0.1
 
 # Goal lifecycle
@@ -100,53 +109,131 @@ class ConversationContext:
     Rolling buffer of recent conversation turns.
     Gives the daemon "memory" of what was recently discussed,
     so it can boost goals that relate to active topics.
+
+    v6 UPGRADE:
+      - Bigram extraction: "robot tank" becomes keyword "robot_tank" plus
+        individual words, so archived episodes retain contextual association.
+      - Co-occurrence map: words that appear in the same turn are linked,
+        so relevance_score can find semantic neighbors (e.g. "tank" boosts
+        a goal about "robot body" because "robot" co-occurred with "tank").
+      - Turn-weighted keywords: recent turns contribute more than older ones.
     """
-    def __init__(self, max_turns: int = 5):
+    STOPWORDS = frozenset({
+        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'i', 'you', 'we',
+        'my', 'your', 'to', 'in', 'on', 'at', 'for', 'of', 'and', 'or',
+        'but', 'not', 'it', 'that', 'this', 'with', 'have', 'has', 'had',
+        'do', 'does', 'did', 'will', 'would', 'could', 'should', 'can',
+        'be', 'been', 'being', 'from', 'about', 'into', 'just', 'also',
+        'so', 'if', 'when', 'what', 'how', 'why', 'where', 'which', 'who',
+        'more', 'some', 'any', 'all', 'each', 'every', 'both', 'few',
+        'than', 'then', 'now', 'here', 'there', 'these', 'those', 'they',
+        'them', 'their', 'its', 'our', 'his', 'her', 'up', 'out', 'like',
+        'get', 'got', 'going', 'know', 'think', 'want', 'need', 'make',
+        'really', 'very', 'much', 'still', 'even', 'back', 'way', 'well',
+        'right', 'good', 'new', 'yeah', 'yes', 'no', 'oh', 'ok', 'okay',
+    })
+
+    def __init__(self, max_turns: int = 10):
         self._turns: deque = deque(maxlen=max_turns)
         self._keywords: set = set()
+        self._bigrams: set = set()                     # NEW: "word1_word2" pairs
+        self._cooccurrence: Dict[str, set] = {}        # NEW: word -> {co-occurring words}
+        self._keyword_weights: Dict[str, float] = {}   # NEW: recency-weighted keyword scores
 
     def add_turn(self, user_input: str, bot_output: str):
         self._turns.append((user_input, bot_output))
         self._rebuild_keywords()
 
+    def _extract_words(self, text: str) -> List[str]:
+        """Extract meaningful words from text, filtered by stopwords."""
+        return [w for w in re.findall(r'[a-zA-Z]{3,}', text.lower())
+                if w not in self.STOPWORDS]
+
     def _rebuild_keywords(self):
-        """Extract meaningful keywords from recent conversation."""
-        stopwords = {
-            'the', 'a', 'an', 'is', 'are', 'was', 'were', 'i', 'you', 'we',
-            'my', 'your', 'to', 'in', 'on', 'at', 'for', 'of', 'and', 'or',
-            'but', 'not', 'it', 'that', 'this', 'with', 'have', 'has', 'had',
-            'do', 'does', 'did', 'will', 'would', 'could', 'should', 'can',
-            'be', 'been', 'being', 'from', 'about', 'into', 'just', 'also',
-            'so', 'if', 'when', 'what', 'how', 'why', 'where', 'which', 'who',
-            'more', 'some', 'any', 'all', 'each', 'every', 'both', 'few',
-            'than', 'then', 'now', 'here', 'there', 'these', 'those', 'they',
-            'them', 'their', 'its', 'our', 'his', 'her', 'up', 'out', 'like',
-            'get', 'got', 'going', 'know', 'think', 'want', 'need', 'make',
-            'really', 'very', 'much', 'still', 'even', 'back', 'way', 'well',
-            'right', 'good', 'new', 'yeah', 'yes', 'no', 'oh', 'ok', 'okay',
-        }
+        """Extract keywords, bigrams, and co-occurrence from recent conversation."""
         self._keywords.clear()
-        for user_msg, bot_msg in self._turns:
+        self._bigrams.clear()
+        self._cooccurrence.clear()
+        self._keyword_weights.clear()
+
+        num_turns = len(self._turns)
+        for turn_idx, (user_msg, bot_msg) in enumerate(self._turns):
+            # Recency weight: most recent turn = 1.0, oldest = 0.3
+            recency = 0.3 + 0.7 * (turn_idx / max(1, num_turns - 1)) if num_turns > 1 else 1.0
+
+            turn_words = set()
             for text in (user_msg, bot_msg):
-                words = re.findall(r'[a-zA-Z]{3,}', text.lower())
+                words = self._extract_words(text)
+
                 for w in words:
-                    if w not in stopwords:
-                        self._keywords.add(w)
+                    self._keywords.add(w)
+                    turn_words.add(w)
+                    # Accumulate recency weight (later turns overwrite with higher weight)
+                    self._keyword_weights[w] = max(self._keyword_weights.get(w, 0.0), recency)
+
+                # Bigrams: consecutive meaningful words
+                for i in range(len(words) - 1):
+                    bigram = f"{words[i]}_{words[i+1]}"
+                    self._bigrams.add(bigram)
+                    self._keyword_weights[bigram] = max(
+                        self._keyword_weights.get(bigram, 0.0), recency
+                    )
+
+            # Co-occurrence: all words in the same turn are linked
+            for w in turn_words:
+                if w not in self._cooccurrence:
+                    self._cooccurrence[w] = set()
+                self._cooccurrence[w].update(turn_words - {w})
 
     def relevance_score(self, text: str) -> float:
-        """How relevant is this text to recent conversation? 0.0–1.0"""
+        """
+        How relevant is this text to recent conversation? 0.0–1.0
+
+        v6 UPGRADE: Three-layer scoring:
+          1. Direct keyword overlap (weighted by recency)
+          2. Bigram overlap (stronger signal, worth more)
+          3. Co-occurrence expansion (if text contains "robot", and "robot"
+             co-occurred with "tank" in conversation, partial credit for "tank")
+        """
         if not self._keywords:
             return 0.0
-        words = set(re.findall(r'[a-zA-Z]{3,}', text.lower()))
+        words = self._extract_words(text)
         if not words:
             return 0.0
-        overlap = words & self._keywords
-        # Normalize by goal word count (not context size)
-        return min(1.0, len(overlap) / max(1, len(words)) * 2.0)
+        word_set = set(words)
+
+        # Layer 1: Direct keyword overlap (recency-weighted)
+        direct_overlap = word_set & self._keywords
+        direct_score = sum(self._keyword_weights.get(w, 0.5) for w in direct_overlap)
+
+        # Layer 2: Bigram overlap (worth 1.5x a single keyword)
+        bigram_score = 0.0
+        for i in range(len(words) - 1):
+            bigram = f"{words[i]}_{words[i+1]}"
+            if bigram in self._bigrams:
+                bigram_score += self._keyword_weights.get(bigram, 0.5) * 1.5
+
+        # Layer 3: Co-occurrence expansion (0.3x credit for neighbor words)
+        cooccur_score = 0.0
+        for w in direct_overlap:
+            neighbors = self._cooccurrence.get(w, set())
+            # Words in the goal that are neighbors of conversation words
+            neighbor_hits = (word_set - direct_overlap) & neighbors
+            cooccur_score += len(neighbor_hits) * 0.3
+
+        total = direct_score + bigram_score + cooccur_score
+        # Normalize by word count to keep 0.0-1.0 range
+        normalized = total / max(1, len(word_set)) * 1.5
+        return min(1.0, normalized)
 
     @property
     def keywords(self) -> set:
-        return self._keywords
+        """All keywords including bigrams for archive compatibility."""
+        return self._keywords | self._bigrams
+
+    @property
+    def keyword_weights(self) -> Dict[str, float]:
+        return self._keyword_weights
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -291,7 +378,8 @@ def extract_topics_from_turn(user_input: str, bot_output: str) -> List[Dict[str,
 
 
 def feed_goals_from_turn(goal_engine: GoalEngine, lifecycle: GoalLifecycle,
-                          user_input: str, bot_output: str):
+                          user_input: str, bot_output: str,
+                          current_turn: int = 0, goal_birth_turn: Dict[str, int] = None):
     topics = extract_topics_from_turn(user_input, bot_output)
     if not topics:
         return
@@ -315,6 +403,8 @@ def feed_goals_from_turn(goal_engine: GoalEngine, lifecycle: GoalLifecycle,
 
         gid = goal_engine.add_rabbit_hole(topic["description"], curiosity=topic["curiosity"])
         lifecycle.register(gid, source="conversation")
+        if goal_birth_turn is not None:
+            goal_birth_turn[gid] = current_turn
         existing_descs.add(topic["description"].lower()[:30])
         added += 1
 
@@ -363,7 +453,7 @@ def demote_boot_goals(goal_engine: GoalEngine, lifecycle: GoalLifecycle):
 def _build_ambient_awareness(cog_state, cycle_count: int) -> str:
     s = cog_state.state
     parts = []
-    elapsed = cycle_count * 0.9
+    elapsed = cycle_count * 1.0   # v7: 10 phases × 0.1s = 1.0s per cycle
     if elapsed > 60:
         parts.append(f"About {elapsed/60:.1f} minutes have passed since last interaction.")
     elif elapsed > 5:
@@ -453,9 +543,11 @@ class CognitiveSnapshot:
     crap_threshold: float = 0.25
     items_evaluated: int = 0
     items_purged: int = 0
+    last_reflection: str = ""                              # v7: what REFLECT concluded
+    code_refresh_pending: bool = False                     # v7: signals code read needed
 
     def format_for_prompt(self, max_items: int = 5) -> str:
-        elapsed_seconds = self.cycle_count * 0.9
+        elapsed_seconds = self.cycle_count * 1.0           # v7: 10 phases × 0.1s = 1.0s per cycle
         if elapsed_seconds < 1 and not self.top_recommendations:
             return ""
 
@@ -503,6 +595,10 @@ class CognitiveSnapshot:
             for item in self.user_urgent_items[:3]:
                 lines.append(f"  → {item.get('description', '?')[:50]}")
 
+        # v7: Show reflection output
+        if self.last_reflection:
+            lines.append(f"Last cycle reflection: {self.last_reflection}")
+
         return "\n".join(lines)
 
 
@@ -527,6 +623,7 @@ class TemporalDaemon:
         self._phase: int = 0
         self._cycle_count: int = 0
         self._real_turns: int = 0
+        self._goal_birth_turn: Dict[str, int] = {}    # NEW: track which turn each goal was born on
 
         self._candidate_scores: Dict[str, float] = {}
         self._action_queue: List[ActionCandidate] = []
@@ -536,6 +633,12 @@ class TemporalDaemon:
         self._ambient_awareness: str = ""
         self._items_purged: int = 0
         self._on_urgent_callback = None
+
+        # v7: REFLECT phase state
+        self._reflection_seeds: List[Dict[str, Any]] = []   # Seeds for next cycle's phase 0
+        self._last_cycle_summary: str = ""                   # What REFLECT concluded
+        self._code_refresh_pending: bool = False             # Triggers read_code injection
+        self._cycles_since_code_read: int = 0                # Counter for 100-cycle code refresh
 
     @property
     def lifecycle(self) -> GoalLifecycle:
@@ -587,7 +690,9 @@ class TemporalDaemon:
 
         # Resolve OLD goals first, THEN feed new ones
         resolve_discussed_goals(self._goals, self._lifecycle, user_input, self._cycle_count)
-        feed_goals_from_turn(self._goals, self._lifecycle, user_input, bot_output)
+        feed_goals_from_turn(self._goals, self._lifecycle, user_input, bot_output,
+                             current_turn=self._real_turns,
+                             goal_birth_turn=self._goal_birth_turn)
 
         # Update conversation context buffer
         self._context.add_turn(user_input, bot_output)
@@ -618,6 +723,8 @@ class TemporalDaemon:
                 crap_threshold=compute_crap_threshold(self._cog_state),
                 items_evaluated=len(self._candidate_scores),
                 items_purged=self._items_purged,
+                last_reflection=self._last_cycle_summary,
+                code_refresh_pending=self._code_refresh_pending,
             )
 
     def _curiosity_trend(self, goal_id: str) -> str:
@@ -669,6 +776,7 @@ class TemporalDaemon:
             Phase.USER_URGENCY:      self._phase_user_urgency,
             Phase.SUMMARIZE:         self._phase_summarize,
             Phase.CLEANUP:           self._phase_cleanup,
+            Phase.REFLECT:           self._phase_reflect,
         }[phase]()
 
     # ─── PHASE 0: CHECK GOALS ───
@@ -681,7 +789,23 @@ class TemporalDaemon:
             if purged > 0:
                 self._lifecycle.cleanup(set(self._goals.goals.keys()))
 
-    # ─── PHASE 1: EVALUATE (with CURIOSITY GROWTH) ───
+        # v7: Pick up seeds from previous cycle's REFLECT phase
+        seeds = self.consume_reflection_seeds()
+        for seed in seeds:
+            # Don't duplicate existing goals with similar descriptions
+            desc_prefix = seed["description"].lower()[:30]
+            already_exists = any(
+                g.description.lower()[:30] == desc_prefix
+                for g in self._goals.goals.values()
+            )
+            if not already_exists:
+                gid = self._goals.add_rabbit_hole(
+                    seed["description"],
+                    curiosity=seed.get("curiosity", 0.45)
+                )
+                self._lifecycle.register(gid, source=seed.get("source", "reflect"))
+
+    # ─── PHASE 1: EVALUATE (with CURIOSITY GROWTH + TURN-BASED DECAY) ───
     def _phase_evaluate(self):
         good_sense = compute_good_sense(self._cog_state)
         state = self._cog_state.state
@@ -699,11 +823,19 @@ class TemporalDaemon:
                     goal.importance * 0.25 + state.engagement * 0.20
                 )
 
-                # Context relevance boost (NEW in v4)
+                # Context relevance boost (v4 base + v6 turn-decay upgrade)
                 # Goals related to recent conversation get a boost
                 relevance = self._context.relevance_score(goal.description)
                 if relevance > 0.1:
-                    score += relevance * CONTEXT_RELEVANCE_BOOST
+                    # TURN-BASED DECAY: goals born many turns ago get
+                    # diminishing context boost. This replaces pure wall-clock
+                    # decay for the middle TWDC layer.
+                    # Half-life of ~8 turns: a goal from 8 turns ago gets 50% boost,
+                    # 16 turns ago gets 25%, etc.
+                    birth_turn = self._goal_birth_turn.get(gid, 0)
+                    turn_age = max(0, self._real_turns - birth_turn)
+                    turn_decay = 1.0 / (1.0 + turn_age / 8.0)  # smooth hyperbolic decay
+                    score += relevance * CONTEXT_RELEVANCE_BOOST * turn_decay
 
                 self._candidate_scores[gid] = score
                 self._lifecycle.update_score(gid, score, self._cycle_count)
@@ -910,6 +1042,134 @@ class TemporalDaemon:
 
             self._lifecycle.cleanup(set(self._goals.goals.keys()))
 
+        # v5: Mode decay — let inactive modes fade each cycle
+        if MODES_AVAILABLE:
+            try:
+                get_plan_buffer().daemon_check()
+                get_mode_engine().decay_all_modes()
+            except Exception:
+                pass
+        
+        # v5: Periodic archival — every 500 cycles (~50 seconds),
+        # check if old memories need compressing to archive
+        if MODES_AVAILABLE and self._cycle_count > 0 and self._cycle_count % 500 == 0:
+            try:
+                archived = archive_old_memories()
+                if archived > 0:
+                    get_mode_engine().refresh_archive_tags()
+                    print(f"[DAEMON] Auto-archived {archived} episodes")
+            except Exception as e:
+                print(f"[DAEMON] Archive error: {e}")
+
+    # ─── PHASE 9: REFLECT (v7) ───
+    def _phase_reflect(self):
+        """
+        REFLECT: End-of-cycle introspection.
+
+        Does three things:
+        1. EVALUATE what this cycle accomplished — what goals moved,
+           what got purged, what's stagnant.
+        2. SEED goals/notes for the next cycle's phase 0 (CHECK_GOALS)
+           to pick up. This closes the cognitive loop so the daemon
+           learns from its own processing rather than just filtering.
+        3. CODE REFRESH: Every 100 cycles (~100 seconds), flag that
+           the next prompt should include a fresh code read for
+           contextual self-model maintenance. For v7ys autonomous
+           evolution, this keeps the self-model current.
+
+        The reflection is lightweight — no API calls, no heavy compute.
+        Just bookkeeping that makes the next cycle smarter.
+        """
+        with self._lock:
+            # ─── 1. CYCLE EVALUATION ───
+            num_recs = len(self._recommendations)
+            num_urgent = len(self._user_urgent)
+            num_goals = len(self._goals.goals)
+
+            # Identify goals that grew in curiosity this cycle (thriving)
+            thriving = []
+            stagnant = []
+            for gid, goal in self._goals.goals.items():
+                meta = self._lifecycle.get(gid)
+                if not meta:
+                    continue
+                if meta.get("resolved"):
+                    continue
+                score = self._candidate_scores.get(gid, 0.0)
+                threshold = compute_crap_threshold(self._cog_state)
+                if score >= threshold and goal.curiosity > 0.5:
+                    thriving.append((gid, goal.description[:40], goal.curiosity))
+                elif score < threshold and goal.curiosity < 0.2:
+                    stagnant.append((gid, goal.description[:40]))
+
+            # ─── 2. SEED FOR NEXT CYCLE ───
+            self._reflection_seeds.clear()
+
+            # If we have thriving goals, seed a meta-goal to explore connections
+            if len(thriving) >= 2:
+                descriptions = [t[1] for t in thriving[:3]]
+                self._reflection_seeds.append({
+                    "type": "connection",
+                    "description": f"Explore connection between: {' & '.join(descriptions)}",
+                    "curiosity": 0.55,
+                    "source": "reflect",
+                })
+
+            # If everything is stagnant, seed a novelty-seeking goal
+            if num_recs > 0 and len(stagnant) > num_recs * 0.7:
+                self._reflection_seeds.append({
+                    "type": "novelty",
+                    "description": "Seek novel direction — current goals are stagnating",
+                    "curiosity": 0.60,
+                    "source": "reflect",
+                })
+
+            # If urgent items exist but haven't been addressed, escalate
+            if num_urgent > 0:
+                for u in self._user_urgent[:2]:
+                    self._reflection_seeds.append({
+                        "type": "escalation",
+                        "description": f"Unaddressed urgent: {u.description[:50]}",
+                        "curiosity": 0.50,
+                        "source": "reflect",
+                    })
+
+            # Build cycle summary for snapshot
+            self._last_cycle_summary = (
+                f"cycle={self._cycle_count} | "
+                f"goals={num_goals} | recs={num_recs} | "
+                f"thriving={len(thriving)} | stagnant={len(stagnant)} | "
+                f"urgent={num_urgent} | seeds={len(self._reflection_seeds)}"
+            )
+
+        # ─── 3. CODE REFRESH TRACKING (v7ys) ───
+        self._cycles_since_code_read += 1
+        if self._cycles_since_code_read >= 100:
+            self._code_refresh_pending = True
+            self._cycles_since_code_read = 0
+
+    def consume_reflection_seeds(self) -> List[Dict[str, Any]]:
+        """
+        Called by phase 0 (CHECK_GOALS) on the next cycle to pick up
+        seeds that REFLECT planted. Returns and clears the seed list.
+        """
+        with self._lock:
+            seeds = list(self._reflection_seeds)
+            self._reflection_seeds.clear()
+        return seeds
+
+    def consume_code_refresh(self) -> bool:
+        """
+        Check if a code refresh is pending (every 100 cycles).
+        Returns True once, then resets the flag.
+        Used by signalbot.py or the v7ys evolution loop to inject
+        fresh code context into the next prompt.
+        """
+        if self._code_refresh_pending:
+            self._code_refresh_pending = False
+            return True
+        return False
+
     # ═══ DIAGNOSTIC ═══
 
     def get_status(self) -> str:
@@ -918,11 +1178,18 @@ class TemporalDaemon:
             nr, nu = len(self._recommendations), len(self._user_urgent)
             ng = len(self._goals.goals)
             total_curio = sum(g.curiosity for g in self._goals.goals.values())
+        mode_info = ""
+        if MODES_AVAILABLE:
+            try:
+                mode_info = f" | {get_mode_engine().get_status()}"
+            except Exception:
+                pass
         return (f"[DAEMON] {st} | cycle={self._cycle_count} | "
                 f"phase={Phase(self._phase).name} | goals={ng} | "
                 f"recs={nr} | urgent={nu} | "
                 f"good_sense={compute_good_sense(self._cog_state):.2f} | "
-                f"total_curio={total_curio:.2f}/{CURIOSITY_TOTAL_BUDGET:.0f}")
+                f"total_curio={total_curio:.2f}/{CURIOSITY_TOTAL_BUDGET:.0f}"
+                f"{mode_info}")
 
 
 # SINGLETON

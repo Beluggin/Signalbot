@@ -11,7 +11,7 @@ It now has access to the full cognitive state.
 """
 
 from thread_registry import ThreadRegistry
-from goal_engine import GoalEngine
+from goal_engine_DAEMON import GoalEngine
 from scheduler_UPDATED import InitiativeScheduler
 from cognitive_state import get_cognitive_state
 

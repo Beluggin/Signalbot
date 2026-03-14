@@ -1,0 +1,18 @@
+{
+  "frustration": 0.6251528000000002,
+  "curiosity": 0.7305879471795386,
+  "confidence": 0.9000000000000001,
+  "engagement": 1.0,
+  "identity_adherence": 0.9301947483310654,
+  "context": 0.9,
+  "cognitive_load": 0.3,
+  "recursion_tolerance": 0.5,
+  "affect_matching": 0.6,
+  "last_update": 1773113728.9121692,
+  "tone": {
+    "playful": 1.0,
+    "formal": 1.0,
+    "concise": 1.0,
+    "warm": 1.0
+  }
+}

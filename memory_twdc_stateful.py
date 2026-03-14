@@ -43,22 +43,55 @@ from indelible_facts import get_indelible_prompt_section, get_indelible_keywords
 class StatefulTWDCWrapper:
     """
     Wraps TWDC with state-aware re-scoring.
+
+    v6 UPGRADE:
+      - Contextual relevance now uses co-occurrence expansion from the daemon's
+        ConversationContext (if available), so memories about "robot" get boosted
+        when you're talking about "tank" because those words co-occurred.
+      - Turn-based decay: memories from many turns ago get less state boost,
+        independent of wall-clock time.
     """
     
     def __init__(self):
         self.twdc = get_memory_engine()
         self.cog_state = get_cognitive_state()
+        self._conversation_context = None  # Set by daemon if available
+        self._current_turn: int = 0
         
         # Hydrate TWDC
         if hasattr(self.twdc, 'load_existing'):
             self.twdc.load_existing()
+
+    def set_conversation_context(self, context, current_turn: int = 0):
+        """Allow the daemon to inject its ConversationContext for richer scoring."""
+        self._conversation_context = context
+        self._current_turn = current_turn
     
+    def _compute_contextual_relevance(self, text_blob: str) -> float:
+        """
+        Compute how relevant a memory is to the current conversation.
+        Uses the daemon's ConversationContext if available (bigrams + co-occurrence),
+        otherwise falls back to basic keyword matching.
+        """
+        if self._conversation_context is not None:
+            return self._conversation_context.relevance_score(text_blob)
+
+        # Fallback: basic keyword check against indelible facts
+        identity_keywords = get_indelible_keywords()
+        if not identity_keywords:
+            return 0.0
+        text_lower = text_blob.lower()
+        hits = sum(1 for kw in identity_keywords if kw in text_lower)
+        return min(1.0, hits * 0.2)
+
     def _apply_state_modulation(self, memory_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Re-score memories based on current cognitive state.
         
-        LEARNING NOTE: This is where state vectors affect memory retrieval.
-        We take TWDC's base score and apply multipliers from current state.
+        v6 UPGRADE:
+        - Uses expanded contextual relevance (bigrams + co-occurrence)
+        - Applies turn-based decay so older memories fade by conversation
+          progress, not wall-clock time
         """
         state = self.cog_state.state
         params = self.cog_state.get_memory_retrieval_params()
@@ -67,25 +100,32 @@ class StatefulTWDCWrapper:
             base_score = item.get("score", 0.0)
             modulated_score = base_score
             
+            # Build text blob for analysis
+            tags = item.get("tags", [])
+            facts = item.get("facts", [])
+            text_blob = " ".join(str(f) for f in facts) + " " + " ".join(str(t) for t in tags)
+            text_blob_lower = text_blob.lower()
+            
+            # ─── CONTEXTUAL RELEVANCE BOOST (v6: expanded scope) ───
+            ctx_relevance = self._compute_contextual_relevance(text_blob)
+            if ctx_relevance > 0.1:
+                # Turn-based decay: memories scored relative to conversation recency
+                item_turn = item.get("birth_turn", 0)
+                turn_age = max(0, self._current_turn - item_turn)
+                turn_decay = 1.0 / (1.0 + turn_age / 10.0)
+                modulated_score *= (1.0 + ctx_relevance * turn_decay * 0.5)
+            
             # ─── IDENTITY BOOST ───
-            # When identity_adherence is high, MASSIVELY boost identity-related memories
             if state.identity_adherence > 0.7:
-                tags = item.get("tags", [])
-                facts = item.get("facts", [])
-                text_blob = " ".join(str(f) for f in facts) + " ".join(str(t) for t in tags)
-                text_blob = text_blob.lower()
-                
-                # Check for identity keywords
-                identity_keywords = get_indelible_keywords()  # Get learned keywords
-                if any(kw in text_blob for kw in identity_keywords):
+                identity_keywords = get_indelible_keywords()
+                if any(kw in text_blob_lower for kw in identity_keywords):
                     modulated_score *= (1.0 + params["identity_boost"] * 3.0)
             
             # ─── FRUSTRATION FILTERING ───
             if state.frustration > 0.6:
-                text_blob = " ".join(str(item.get("facts", [])))
-                if any(w in text_blob.lower() for w in ["wonder", "philosophy", "existential"]):
+                if any(w in text_blob_lower for w in ["wonder", "philosophy", "existential"]):
                     modulated_score *= (1.0 - params["frustration_penalty"])
-                if any(w in text_blob.lower() for w in ["fix", "solution", "step"]):
+                if any(w in text_blob_lower for w in ["fix", "solution", "step"]):
                     modulated_score *= (1.0 + params["frustration_penalty"])
             
             # ─── CURIOSITY AMPLIFICATION ───
@@ -96,7 +136,7 @@ class StatefulTWDCWrapper:
             
             # ─── COGNITIVE LOAD FILTERING ───
             if state.cognitive_load > 0.7:
-                complexity = len(str(item.get("facts", [])))
+                complexity = len(text_blob)
                 if complexity > 200:
                     modulated_score *= (1.0 - state.cognitive_load * 0.3)
             

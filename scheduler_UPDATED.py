@@ -15,7 +15,7 @@ LEARNING NOTE: Initiative now depends on:
 import time
 from typing import Optional, Dict, Any
 from thread_registry import ThreadRegistry
-from goal_engine import GoalEngine
+from goal_engine_DAEMON import GoalEngine
 from cognitive_state import get_cognitive_state
 
 MIN_SECONDS_BETWEEN_INITIATIVE = 45
